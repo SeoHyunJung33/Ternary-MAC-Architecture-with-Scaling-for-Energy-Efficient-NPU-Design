@@ -16,9 +16,13 @@
 <img width="645" height="149" alt="image" src="https://github.com/user-attachments/assets/c07e4fc9-8064-49c3-a687-917f310b35cb" />
 
 [그림 2] Reference code Top module Architecture
-3. 설계 및 시뮬레이션
 
-1. 설계 아키텍처
+## 3. 설계 및 시뮬레이션
+
+### 1. 설계 아키텍처
+
+<img width="645" height="202" alt="image" src="https://github.com/user-attachments/assets/dcc28c48-0806-4967-813f-b3c91b92ee97" />
+
 [그림 3] proposed CNN accelerator Top module architecture
 
 본 NPU의 전체 아키텍처는 입력 스트림을 순차적으로 1차 합성곱층(Conv1) → MaxPooling & ReLU →  → 2차 합성곱층(Conv2) → MaxPooling & ReLU → 완전연결층(FC) → 비교기(Comparator) 순서로 처리하는 구조로 되어 있다. 각 단계는 valid_out_1부터 valid_out_6까지의 유효 신호(valid pipeline)를 통해 시간적으로 정렬되어 데이터 흐름이 일정하게 유지된다.
@@ -27,18 +31,24 @@
 
 마지막으로 Fully Connected 계층은 3채널의 풀링 결과를 입력받아 시분할 방식으로 처리하며 Ternary 연산과 6단계 Adder Tree 파이프라인을 통해 연산을 수행한다. 마지막 Comparator 단계에서는 10개의 클래스 점수 중 최대값과 해당 인덱스를 선택하여 최종 판단 결과를 출력한다. 전체 데이터 경로는 12비트 정수 포맷으로 통일되어 있으며, 각 모듈 간의 valid 신호 체인을 통해 정확한 파이프라인 동작이 보장된다.
 
-2. 최적화 방법
-2-1. Systolic Array 설계 및 한계점
+### 2. 최적화 방법
+#### 2-1. Systolic Array 설계 및 한계점
 초기 해결 방안으로, 범용 NPU에 널리 사용되는 Systolic Array(SA) 구조를 합성곱 계층에 도입하고자 하였다. 이를 위해 PE(Processing Element), SA, 버퍼(SMB, WB), MainController 등 총 5개의 모듈을 설계했으며, 설계하는데 성공한 첫 번째 합성곱 계층에 대한 단위 모듈 시뮬레이션 결과는 아래와 같다.
 
+<img width="536" height="146" alt="image" src="https://github.com/user-attachments/assets/b4c13a73-f5ca-4e1a-a503-a02b74cbc652" />
+
 [그림 4] Conv1_layer Systolic Array로 구현한 연산 파형
- 
+
+ <img width="316" height="135" alt="image" src="https://github.com/user-attachments/assets/be66ec72-a324-48d3-87ae-e4ffa6c07d11" />
+
 [그림 5] 모든 모듈의 제어 신호 전달 파형 
 
 SA 구조를 CNN 코드에 통합하고 시뮬레이션을 수행한 결과, 최종 decision 값이 출력되지 않는 문제가 발생했다. 이는 모듈 간 제어 신호가 서로 맞지 않아 생긴 문제로 판단되었다. 근본적인 원인은 초기 설계와 SA 구조의 데이터 스트리밍 불일치였다. SA는 데이터가 끊임없이 스트리밍 방식으로 들어와야 하고 핸드셰이크 방식으로 통신해야 하지만, 기존 코드는 데이터를 배치 단위로 한 번에 내보내는 단방향 푸시 방식이었다. 이렇게 데이터와 제어 신호를 다루는 방식이 달라 모듈간의 흐름이 끊기는 것을 볼 수 있었다. 
 이 문제를 해결하기 위해서는 전체적인 수정이 필요하기에 SA 적용은 추후 과제로 넘기고, 현 과제에서는 다른 대안을 통해 최적화를 진행했다.
 
-2-2. Adder Tree Pipelining
+#### 2-2. Adder Tree Pipelining
+
+<img width="536" height="301" alt="image" src="https://github.com/user-attachments/assets/ff513445-d0b4-4cef-9292-aa02cca103d6" />
 
 [그림 6] Adder tree pipelining 구조
 
@@ -48,19 +58,27 @@ SA 구조를 CNN 코드에 통합하고 시뮬레이션을 수행한 결과, 최
 
 시뮬레이션 결과, 임펄스 입력으로 측정한 지연이 계산된 LAT_TOT와 일치하였고, 난수 벡터에 대해 소프트웨어 기준 모델(동일 라운딩·쉬프트·포화 규칙)과 RTL 출력이 싸이클 단위로 일치하였다. 포화 경계 및 부호 혼합 입력에서도 기대 동작이 확인되었다. 종합하면, 균형형 트리–단계별 파이프라인–최소 필요 비트폭이라는 원칙을 통해 고클록 타이밍 안정성과 면적·전력 효율을 동시에 달성하였으며, 유효 신호 정렬 규약으로 상위 모듈 통합의 신뢰성 또한 확보하였다.
 
-2-3. Ternary Mac
+#### 2-3. Ternary Mac
 
 1) 이론적 배경
 Ternary MAC은 가중치를 실수 대신 {-1, 0, +1}의 세 가지 값으로 제한하여 곱셈기를 제거하는 경량 신경망 연산 구조이다. 일반적인 곱셈-누산(MAC) 연산인 𝑧=𝑥∗𝑤를 근사식 𝑧≈𝛼∗(𝑥⊕𝑤^)로 표현할 수 있으며, 이때 𝑤는 삼진화된 가중치, α는 채널별 스케일 팩터이다.
 즉, 입력 x에 대해 “더하기(+1) / 빼기(−1) / 생략(0)”의 세 가지 연산만 수행하므로, 곱셈 연산이 단순한 선택 연산으로 치환된다.
 
+<img width="245" height="68" alt="image" src="https://github.com/user-attachments/assets/8edce0ac-e35c-48b9-ae75-f3d18b1a770a" />
+
 가중치의 절대값이 임계값 Δ보다 크면 부호(+/−)만 남기고, 그 이하일 경우 0으로 만든다. 즉, 곱셈기를 제거하고, 0 값의 가중치에 대해 연산을 생략할 수 있게 하여 전력과 연산량을 줄인다.
 
+<img width="218" height="92" alt="image" src="https://github.com/user-attachments/assets/6cf0d184-ed9f-4e65-af6f-f614ed925dca" />
 
 
 임계값 Δ는 가중치의 평균 절대값 𝐸(∣𝑤∣)에 상수 계수를 곱해 추정한다. 이렇게 계산된 Δ를 기준으로 0과 ±1을 구분하면, 가중치의 중요도에 따라 연산 효율성을 자연스럽게 확보할 수 있다.
 
+<img width="241" height="44" alt="image" src="https://github.com/user-attachments/assets/ab54fbb4-e9ce-42d0-8cb5-7528885a50f5" />
+
 삼진화로 인해 손실된 표현력은 스케일 팩터 α를 통해 복구된다. α는 Δ를 넘는 가중치들(즉, 0이 아닌 항)의 평균 절대값으로 정의된다.
+
+<img width="132" height="52" alt="image" src="https://github.com/user-attachments/assets/b4067332-83f9-46c8-b8d5-94bfd1735466" />
+
 결과적으로 Ternary MAC의 연산 절차는(1) Δ 계산 → (2) {-1, 0, +1} 투사 → (3) α 추정 → (4) 부호 선택 연산 수행으로 구성된다. 이 구조는 곱셈기 없이 부호 선택과 가산기만으로 동작하며, 채널별 α를 통해 정확도를 유지하면서도 연산 및 전력 소모를 크게 절감할 수 있다.
 
 2) 학습 및 가중치 추출 python code
@@ -68,19 +86,19 @@ Ternary MAC은 가중치를 실수 대신 {-1, 0, +1}의 세 가지 값으로 �
 
 학습 중에는 정수 경로 일치를 위해 FakeQuantQ2_6STE와 ArithmeticRightShiftSTE를 사용하여, α, bias의 Q2.6 정수 라운딩 및 시프트를 시뮬레이션한다. 역전파는 Straight-Through Estimator(STE)를 사용해 미분 불가능한 구간을 통과시킴으로써 학습이 가능하도록 처리된다. 삼진화는 conv2와 FC 계층에만 적용되며 conv1은 INT8 기반의 Q1.15 스케일 정규화 방식을 사용한다. TernaryConv2d는 입력 채널별 5×5 합을 구한 뒤 22비트 누적 범위 내에서 클램핑하고, 스케일 α(Q2.6)를 곱한 후 라운딩 시프트로 정수화한다. TernaryLinear는 48탭 누적을 28비트 범위로 제한하여 동일한 스케일 및 바이어스 처리를 수행한다. 최종적으로 export_txt_from_model() 함수가conv2와 FC의 𝑤^, α, bias를 각각 HEX 파일(Q2.6 형식)로 내보낸다. 이 파일들은 RTL 설계에서 $readmemh로 불러와 그대로 사용되며, PyTorch 학습 모델과 하드웨어의 결과가 수치적으로 일치하도록 보장한다.
 
+<img width="282" height="130" alt="image" src="https://github.com/user-attachments/assets/704bcfc4-6cc0-4a56-99b6-c590c8b5dd3e" />
+
 [그림 7] TernaryQuantFn 클래스 – 가중치 삼진화 연산 구현
 
+<img width="346" height="124" alt="image" src="https://github.com/user-attachments/assets/5f0cec60-4f24-4cd9-92ff-37465f71733d" />
 
 [그림 8] ternary_with_alpha() 함수 – 임계값 Δ 계산 및 스케일 α 추정
+
+<img width="441" height="448" alt="image" src="https://github.com/user-attachments/assets/270f610b-c7f5-4305-980a-03ba908484f8" />
+
 [그림 9] TernaryConv2d 클래스 – 합성곱 계층의 삼진 MAC 연산 구현
 
-
-
-
-
-
-
-
+<img width="395" height="196" alt="image" src="https://github.com/user-attachments/assets/e9125a9b-4f26-4d10-af05-66f5f04a6fd3" />
 
 [그림 10] TernaryLinear 클래스 – 완전연결 계층의 삼진 연산 구현
 
@@ -94,6 +112,7 @@ Ternary MAC은 가중치를 실수 대신 {-1, 0, +1}의 세 가지 값으로 �
 
 이 구조는 [그림 11]의 표 및 회로도로 표현할 수 있으며, 곱셈기 없이 MUX와 가산기 트리만으로 구현된다.
 
+<img width="341" height="135" alt="image" src="https://github.com/user-attachments/assets/3ed4a3b6-e0a5-4712-ba15-7d14cd54bd83" />
 
 [그림 11] Ternary MAC 구현
 
@@ -101,8 +120,10 @@ Conv2 단계에서는 3채널 입력(12×12)을 받아 5×5 윈도우 단위로 
 α와 bias 적용 후 12비트 정수로 출력된다. 마지막 Comparator 모듈은 10개 클래스 점수 중 최대값을 선택한다. 모든 모듈은 valid 파이프라인을 통해 정렬되어, conv2와 FC의 누적 폭(22b, 28b), Q2.6 라운딩, 12b 포화 규칙이 Python QAT 모델과 완전히 일치하도록 설계되었다.
 따라서 소프트웨어 학습 결과와 RTL 연산 결과가 1:1로 정합되며, 0 가중치 비율이 높을수록 Zero-skip 효과로 전력 효율이 더욱 향상된다. 결국, 칩 내부의 Ternary MAC 구조는 곱셈 없는 부호 선택 가산 방식, 채널별 α 스케일의 정수화 처리, 그리고 정확히 규정된 누적 폭과 포화 연산의 조합으로 구성되어 있다. 이를 통해 연산 면적과 전력 소모를 줄이면서도 학습 모델과의 수치적 정합성을 유지할 수 있다.
 
-3. 모듈별(레이어별) 최적화 적용 방법
-3-1. convolution 1
+### 3. 모듈별(레이어별) 최적화 적용 방법
+#### 3-1. convolution 1
+
+<img width="546" height="273" alt="image" src="https://github.com/user-attachments/assets/e7cbd8bb-7d67-425b-b3a4-4100f2d42d73" />
 
 [그림 12] convolution 1 layer 내부 구조
 
@@ -114,8 +135,12 @@ Conv1 레이어는 28×28 크기의 8비트 영상을 입력받아, 내부 버�
 검증은 PyTorch QAT 모델을 기준으로 RTL 시뮬레이션 결과(conv1_out_ch1~3, 24×24 맵)를 비교했으며
 절대 오차 0을 확인했다. 또한 파형 분석을 통해 파이프라인 삽입 후에도 valid 신호가 정상적으로 정렬됨을 검증하였다. 결과적으로 Conv1 레이어는 정확도를 유지하면서도 연산 속도와 타이밍 안정성을 모두 향상시켰다.
 
+<img width="645" height="119" alt="image" src="https://github.com/user-attachments/assets/ebb530c9-1b23-478b-a740-b0d76b7da2a5" />
+
 [그림 13] conv1 simulation 파형
-3-2. convolution 2
+#### 3-2. convolution 2
+
+<img width="542" height="302" alt="image" src="https://github.com/user-attachments/assets/9bc037b6-43e8-484f-bf3b-d14e9d64902b" />
 
 [그림 14] convolution 2 layer 내부 구조
 
@@ -126,9 +151,13 @@ Conv2의 핵심 연산은 Ternary MAC 구조이다. 가중치는 {-1, 0, +1} 값
 정규화 단계에서는 출력 채널별 스케일 α(Q2.6)과 바이어스 b(Q2.6)를 적용한다. 이 스케일과 바이어스는 PyTorch QAT에서 생성된 값과 1:1로 대응하며, RTL에서도 동일한 라운딩 규칙을 사용하여 소프트웨어와 하드웨어의 결과 정합성을 유지한다. 또한 입력 유효 신호(valid)는 버퍼, 패커, 가산트리, 정규화 블록 전반에 동일한 파이프라인 깊이로 전달되어 세 출력 채널의 타이밍이 완벽히 일치한다.
 검증 과정에서는 (1) PyTorch QAT 환경에서 기준 맵(8×8)을 생성하고, (2) RTL 시뮬레이션의 conv2_out 결과와 픽셀 단위로 비교하여 완전 일치를 확인했으며 (3) 96사이클 스트림의 타이밍이 u_pool2 입력 규격과 정확히 일치함을 파형 분석으로 검증했다. 결과적으로 Conv2는 삼진화 기반의 곱셈기 제거, 가산트리 파이프라이닝에 의한 연산 속도 향상, 그리고 채널별 정규화를 통한 정확도 보전을 동시에 달성하였다.
 
+<img width="645" height="204" alt="image" src="https://github.com/user-attachments/assets/e04003b6-06df-47ae-878c-84339595b2d1" />
+
 [그림 15] conv2 simulation 파형
 
-3-3. fully connected
+#### 3-3. fully connected
+
+<img width="645" height="147" alt="image" src="https://github.com/user-attachments/assets/2867601c-de4e-4a26-ad39-11e0939b4f6c" />
 
 [그림 16] Fully connected layer 내부 구조
 
@@ -137,34 +166,42 @@ Conv2의 핵심 연산은 Ternary MAC 구조이다. 가중치는 {-1, 0, +1} 값
 정규화는 학습 단계에서 추정해 둔 클래스별 α(Q2.6), b(Q2.6) 를 적용한다. 구현은 RTL 규칙에 맞춘 라운드-하프-업(ROUND=32) 후 산술 시프트 6비트(>>>6) 로 스케일을 계산하고, 동일 규칙으로 변환한 바이어스를 더한 뒤 12비트 포화(sat12) 로 최종 점수를 출력한다. 이 처리 블록도 파이프라인화되어 입력 valid와 동일한 지연으로 fc_out_data가 클래스 인덱스 0→9 순으로 스트리밍된다.
 정합/검증은 (1) PyTorch QAT 경로에서 Ternary ⊕ α,b,>>>6,sat12 를 그대로 모사한 스크립트로 10개 로짓을 산출하고, (2) RTL 시뮬레이터 덤프와 LSB 단위로 일치하는지 비교 (3) 경계값 패턴(큰 양수/음수, 0 주변)으로 포화·라운딩 동작을 점검하는 방식으로 수행했다. 결과적으로 FC는 곱셈기 제거에 따른 면적·전력 절감, 가산트리 파이프라이닝으로 인한 고클록 동작, 채널별 정규화로 인한 정확도 보전을 동시에 달성하였다.
 
-
-
+<img width="645" height="123" alt="image" src="https://github.com/user-attachments/assets/9347d268-a62d-438b-8e5f-35ce5b245798" />
+<img width="645" height="242" alt="image" src="https://github.com/user-attachments/assets/2558e84a-bbb2-42fa-b7b1-fbc6507dd228" />
 
 [그림 17] fc simulation 파형
 
-3-4. maxpooling & ReLU
+#### 3-4. maxpooling & ReLU
 본 설계에서는 두 번의 2×2 MaxPooling + ReLU를 사용한다. 각 풀링 블록은 입력 특징맵(12-bit signed)을 2×2 윈도우로 스캔해 최댓값만 선택하고, 이후 ReLU로 음수는 0으로 클램프한다.
 - pool1: conv1(24×24×3) → 12×12×3로 다운샘플, 잡음 억제와 지역적 불변성 강화
 - pool2: conv2(8×8×3) → 4×4×3로 다운샘플, FC 입력(총 48값)로 연결
 RTL 구현은 한 사이클에 한 픽셀을 처리하는 유효(valid) 스트림 기반 FSM으로, 8-valid → 4-idle 패턴을 적용해 윈도우 경계마다 비교 레지스터를 갱신한다. 내부 정수 폭은 입력과 동일한 12-bit를 유지하여 연산 오버헤드를 최소화하고 레지스터 삽입으로 valid_in ↔ valid_out 지연을 상위 파이프라인과 정렬했다. 결과적으로 파라미터가 없는 연산으로 연산량과 메모리 접근을 줄이면서 후단 분류기의 견고성을 높인다.
 
+<img width="645" height="129" alt="image" src="https://github.com/user-attachments/assets/5a004b4b-5ba2-4d73-8163-4c85fb99229c" />
+
 [그림 18] maxpool_relu simulation 파형
-3-5. comparator
+#### 3-5. comparator
 CNN 연산 마지막에 fully connected에서 받은 10개의 수 중 최댓값을 골라 최종 decision을 출력하는 모듈 또한 초기 설계에서는 파이프라이닝이 명확하게 적용되어 있지 않아 파이프라이닝을 적용하여 개선하였다. 초기 설계의 비교기는 10개의 입력을 순차적으로 비교하는 선형적인 구조로, 이는 긴 조합 논리 경로를 유발하여 전체 시스템의 타이밍 성능에 좋지 않게 작용했다.
 
 이 문제를 해결하기 위해, 토너먼트 방식의 파이프라인을 적용하여 구조를 개선했다. 기존의 선형 비교 방식과 동일하게 총 9개의 비교기를 사용하지만, 이를 4개의 파이프라인 스테이지로 나누어 배치하였다. 10개의 입력은 10개 → 5개 → 3개 → 2개 → 1개 의 과정으로 점진적으로 비교되어 최종 최댓값이 선택된다. 이 방식을 통해 긴 경로를 단축시켜 타이밍 개선, 최대 동작 주파수 개선, 전력 효율 개선을 기대하였다. 하지만 이 또한 레지스터가 추가 됨으로 인해 면적이 증가하는 트레이드오프가 발생하지만 명확한 이점을 위하여 감수하였다. 
 
+<img width="538" height="234" alt="image" src="https://github.com/user-attachments/assets/0753eac5-0c42-4336-b96c-7abbf11ac1c7" />
+
 [그림 19] 비교기 파이프라이닝 파형
 
-4. 시뮬레이션
+### 4. 시뮬레이션
+
+<img width="645" height="347" alt="image" src="https://github.com/user-attachments/assets/b33cf002-5072-4cfd-a012-886a77e4e1bc" />
 
 [그림 20] 합성 과정
 
 
 
-4. 결과 및 기대효과
-1. 결과
+## 4. 결과 및 기대효과
+### 1. 결과
  1) 정확도(accuracy)
+ 2) 
+<img width="645" height="151" alt="image" src="https://github.com/user-attachments/assets/7bd7b4fd-0ed6-4025-8e93-c0985381d945" />
 
 (위) reference code (아래) proposed code
 
@@ -172,22 +209,24 @@ CNN 연산 마지막에 fully connected에서 받은 10개의 수 중 최댓값�
 
 2) 면적(area)
 
+<img width="645" height="287" alt="image" src="https://github.com/user-attachments/assets/c1d2bf53-9688-4845-b128-dd68b8e82583" />
 
 (위) reference code (아래) proposed code
 
 합성 보고서 비교 결과, 전체 칩은 소폭 감소하였다. Conv2/FC 구간에서 곱셈기가 제거되고, 가중치가 {-1,0,+1}로 제한되면서 MUX(+/- 선택) + 가산트리 중심의 조합 논리로 단순화된 영향이 크다. 결과적으로 레지스터·BRAM 등 순차 소자는 거의 동일(파이프라인 추가분 제외) 조합 논리는 곱셈기 제거 효과로 감소, adder-tree가 지배적인 리소스가 되었으나, 파이프라이닝으로 폭발을 억제되어 총면적이 기준 대비 감소 추세를 보였다.
 
-
-
-
-
 3) 타이밍(worst slack)
+   
+<img width="645" height="159" alt="image" src="https://github.com/user-attachments/assets/71811270-2dc6-4d98-a247-4704ffb00950" />
 
 (좌) reference code (우) proposed code
 
 worst-slack 보고서를 기준으로, adder-tree 파이프라이닝 이후 임계 경로는 곱셈부에서 가산트리 단계로 이동했다. ternary 적용으로 단일 사이클 콤비네이셔널 깊이는 얕아졌고, 단계별 레지스터 삽입으로 데이터 경로 균형이 개선되면서 슬랙 악화 요인이 완화되었다. 다만 일부 경로에서 잔여 음수 슬랙이 관측되어, 실제 주파수 목표를 보수적으로 잡을 경우 다음 보완이 유효하다: (i) 마지막 합산 단계에 레지스터 1단 추가, (ii) 합성 시 retiming 허용, (iii) adder-tree 노드 재배선/균등 분할, (iv) conv2→pool2 경계의 fan-out 완화. 이들 조치로 P&R 이후의 WNS 여유 확보가 기대된다.
 
 4) 전력(power)
+
+<img width="770" height="354" alt="image" src="https://github.com/user-attachments/assets/7d7a0e6f-365f-4a89-948a-532855b74ef4" />
+
 (좌) reference code (우) proposed code
 
 전력 항목 비교에서는 조합 전력의 감소와 순차 전력의 상대적 비중 증가가 동시에 나타났다. 이는 곱셈기 제거(조합 스위칭 감소)와 파이프라인 플립플롭 증가(클록·순차 전력 증가)가 상쇄적으로 작용한 결과다. 총전력은 소폭 감소하는 경향을 보였으며, 추가 최적화로 (a) 입력/가중치가 0인 탭의 operand gating/zero-skip, (b) 유효-신호 기반의 clock-gating(pool/FC 경계), (c) α·bias 레지스터의 공유/겸용 클럭 도메인 정리 등을 적용하면 더 낮출 수 있다.
@@ -195,7 +234,11 @@ worst-slack 보고서를 기준으로, adder-tree 파이프라이닝 이후 임�
 5) 결론
 최적화한 코드는 기존 구조 대비 1,000장 실험에서 정확도가 96% → 93%로 하락했으나, post-synthesis Worst Slack이 −1618.61 ps → −537.89 ps로 개선되어(절댓값 기준 약 66.8% 감소) 고클럭 동작 가능성이 유의미하게 높아졌다. 총 전력은 0.135 W 수준으로 뚜렷한 감소를 보였다. 반면, 단계 간 파이프라이닝 도입에 따른 레지스터 비용으로 총 셀 면적이 23033.88 → 28967.62로 약 25.7% 증가했고, 순차 소자 면적 비율도 7.70% → 26.98%로 확대되었다. 요약하면, 본 설계는 adder-tree 파이프라이닝 + ternary MAC(+α) 적용을 통해 연산 경로를 단축하고 타이밍·전력 측면의 효율을 크게 향상시키는 대신, 정확도 소폭 저하와 면적 증가를 수용하는 명확한 트레이드오프를 보인다. 향후에는 (1) 레지스터 재배치 및 단계 균형화, (2) 마지막 합산부 컴프레서 트리 적용, (3) 합성 지시어 고정(retiming/ungroup/keep)을 통한 경로 안정화로 잔여 음수 슬랙 해소와 면적 최적화를 달성할 수 있었다.
 
-2. 기대효과
+### 2. 기대효과
  첫 번째로, 연산 효율이 상승한다. 기존의 INT8 연산에서의 곱셈기가 가장 큰 면적과 전력을 차지한다. ternary weight를 사용하게 되면 기존의 곱셈 연산을 덧셈과 부호 반전으로 대체할 수 있기 때문에 DSP 사용량을 줄일 수 있다. 
  두 번째로, 기존 8bit에서 2bit로 축소되기 때문에 weight 저장 용량이 감소한다. on-chip SRAM/BRAM에 더 많은 weight를 저장할 수 있어서, DRAM access가 줄고 메모리 병목이 완화된다.
  결론적으로, 곱셈기 제거와 메모리 접근 감소는 전력 소모의 두 주요 원인을 근본적으로 줄이는 효과를 가져온다. 연산부의 switching activity가 줄어들고, 외부 메모리 접근에 필요한 에너지가 감소하기 때문에 전체 시스템 차원에서 전력 효율이 향상되고 발열이 완화된다. 따라서 ternary weight를 적용하면 정확도를 크게 손상시키지 않으면서도 연산·메모리·전력 효율을 동시에 확보할 수 있는 경량 신경망 구조를 구현할 수 있다.
+
+## 5. 출처
+1) Qi, Guijie, Qiao, Tingting, Yu, Jingchi, Xie, Yizhuang, 「Efficient On-board Remote Sensing Scene Classification Using FPGA With Ternary Weight」, National Key Laboratory of Science and Technology on Space-Born Intelligent Information Processing, Beijing Institute of Technology, Beijing, China.
+2) Boaaaang, 「CNN-Implementation-in-Verilog」, GitHub 저장소, https://github.com/boaaaang/CNN-Implementation-in-Verilog
