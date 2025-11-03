@@ -1,0 +1,1 @@
+# Ternary-MAC-Architecture-with-Scaling-for-Energy-Efficient-NPU-Design
