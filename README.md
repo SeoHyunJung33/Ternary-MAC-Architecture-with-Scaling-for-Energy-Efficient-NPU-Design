@@ -6,19 +6,16 @@
 
 <img width="576" height="197" alt="image" src="https://github.com/user-attachments/assets/c4d122f5-995b-4eea-bd41-b0b65dbebe52" />
 
+[그림 1] Convolution Neural Network(CNN) architecture
 
-
-             
-
-                [그림 1] Convolution Neural Network(CNN) architecture
-
-2. 설계 목표
+## 2. 설계 목표
 본 설계의 목표는 Ternary MAC 구조와 Adder Tree Pipelining 기법을 적용하여 CNN 가속기의 연산 효율과 타이밍 안정성을 동시에 확보하는 것이다. 연산 경로를 단순화하면서도 정확도를 유지할 수 있는 구조를 구현하고 CNN 연산의 전력 소모를 최소화하여 에너지 효율(TOPS/W)이 높은 NPU 설계를 주된 목표로 한다.
 또한, 합성곱 계층의 연산 병목을 완화하기 위해 데이터 흐름 중심의 병렬 구조를 설계하고 파이프라인 단계 간 균형을 최적화하여 지연과 자원 사용률 사이의 균형을 확보하는 것을 목표로 한다. 이를 통해 타이밍 제약 내에서 안정적인 처리 속도를 유지하고 Worst Slack ≥ 0 ns 수준의 합성 타이밍 수렴을 달성할 수 있는 구조를 지향한다.
 마지막으로, Fully Connected(FC) 및 Comparator 단계는 전체 시스템의 분류 정확도와 응답속도에 직접적인 영향을 미치므로 전단부에서 학습된 특징 정보를 손실 없이 전달할 수 있는 경량 구조로 설계하는 것을 목표로 한다. 이를 통해 Ternary 기반 CNN 가속기 전체가 정확도, 전력, 면적 측면에서 균형을 이루는 효율적인 NPU 구조를 구현하는 것을 최종 목표로 한다.
 
+<img width="645" height="149" alt="image" src="https://github.com/user-attachments/assets/c07e4fc9-8064-49c3-a687-917f310b35cb" />
 
-                     [그림 2] Reference code Top module Architecture
+[그림 2] Reference code Top module Architecture
 3. 설계 및 시뮬레이션
 
 1. 설계 아키텍처
