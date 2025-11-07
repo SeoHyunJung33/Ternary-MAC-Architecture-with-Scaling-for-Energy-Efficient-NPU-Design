@@ -200,38 +200,39 @@ CNN 연산 마지막에 fully connected에서 받은 10개의 수 중 최댓값�
 ## 4. 결과 및 기대효과
 ### 1. 결과
  1) 정확도(accuracy)
- 2) 
-<img width="645" height="151" alt="image" src="https://github.com/user-attachments/assets/7bd7b4fd-0ed6-4025-8e93-c0985381d945" />
-
-(위) reference code (아래) proposed code
+ 
+<img width="1240" height="730" alt="image" src="https://github.com/user-attachments/assets/ccd3c81a-30e4-430f-b580-d4351160fe87" />
 
 테스트셋 1,000장에 대해 고정소수점(Q1.15 / Q2.6)과 RTL 연산 규칙을 그대로 반영한 추론 평가 결과, 최종 정확도는 약 93%로 측정되었다. Conv1은 INT8로 유지하고, Conv2/FC에ternary(+α) 를 적용했음에도 분류 성능이 안정적으로 확보되었으며, 파이썬과 RTL 경로 간의 연산 일치가 주된 성능 유지 요인으로 확인된다.
 
 2) 면적(area)
 
-<img width="645" height="287" alt="image" src="https://github.com/user-attachments/assets/c1d2bf53-9688-4845-b128-dd68b8e82583" />
-
-(위) reference code (아래) proposed code
+<img width="1108" height="627" alt="image" src="https://github.com/user-attachments/assets/94107f00-c4de-4494-bd05-9d834d206410" />
 
 합성 보고서 비교 결과, 전체 칩은 소폭 감소하였다. Conv2/FC 구간에서 곱셈기가 제거되고, 가중치가 {-1,0,+1}로 제한되면서 MUX(+/- 선택) + 가산트리 중심의 조합 논리로 단순화된 영향이 크다. 결과적으로 레지스터·BRAM 등 순차 소자는 거의 동일(파이프라인 추가분 제외) 조합 논리는 곱셈기 제거 효과로 감소, adder-tree가 지배적인 리소스가 되었으나, 파이프라이닝으로 폭발을 억제되어 총면적이 기준 대비 감소 추세를 보였다.
 
 3) 타이밍(worst slack)
    
-<img width="645" height="159" alt="image" src="https://github.com/user-attachments/assets/71811270-2dc6-4d98-a247-4704ffb00950" />
-
-(좌) reference code (우) proposed code
+<img width="1147" height="709" alt="image" src="https://github.com/user-attachments/assets/dd93de82-f58e-45e7-9751-b20a06761f91" />
 
 worst-slack 보고서를 기준으로, adder-tree 파이프라이닝 이후 임계 경로는 곱셈부에서 가산트리 단계로 이동했다. ternary 적용으로 단일 사이클 콤비네이셔널 깊이는 얕아졌고, 단계별 레지스터 삽입으로 데이터 경로 균형이 개선되면서 슬랙 악화 요인이 완화되었다. 다만 일부 경로에서 잔여 음수 슬랙이 관측되어, 실제 주파수 목표를 보수적으로 잡을 경우 다음 보완이 유효하다: (i) 마지막 합산 단계에 레지스터 1단 추가, (ii) 합성 시 retiming 허용, (iii) adder-tree 노드 재배선/균등 분할, (iv) conv2→pool2 경계의 fan-out 완화. 이들 조치로 P&R 이후의 WNS 여유 확보가 기대된다.
 
 4) 전력(power)
 
-<img width="770" height="354" alt="image" src="https://github.com/user-attachments/assets/7d7a0e6f-365f-4a89-948a-532855b74ef4" />
-
-(좌) reference code (우) proposed code
+<img width="1177" height="717" alt="image" src="https://github.com/user-attachments/assets/b7509b46-1282-440a-bc3f-fd7bc8a09855" />
 
 전력 항목 비교에서는 조합 전력의 감소와 순차 전력의 상대적 비중 증가가 동시에 나타났다. 이는 곱셈기 제거(조합 스위칭 감소)와 파이프라인 플립플롭 증가(클록·순차 전력 증가)가 상쇄적으로 작용한 결과다. 총전력은 소폭 감소하는 경향을 보였으며, 추가 최적화로 (a) 입력/가중치가 0인 탭의 operand gating/zero-skip, (b) 유효-신호 기반의 clock-gating(pool/FC 경계), (c) α·bias 레지스터의 공유/겸용 클럭 도메인 정리 등을 적용하면 더 낮출 수 있다.
 
-5) 결론
+5) TOPS/W
+    
+   <img width="1110" height="596" alt="image" src="https://github.com/user-attachments/assets/c73e5920-3a92-4609-98f1-30575107ec42" />
+
+
+
+6) 결론
+
+   <img width="1260" height="665" alt="image" src="https://github.com/user-attachments/assets/5c84572f-ee77-4eb3-836c-b2f91ec3d9cd" />
+   
 최적화한 코드는 기존 구조 대비 1,000장 실험에서 정확도가 96% → 93%로 하락했으나, post-synthesis Worst Slack이 −1618.61 ps → −537.89 ps로 개선되어(절댓값 기준 약 66.8% 감소) 고클럭 동작 가능성이 유의미하게 높아졌다. 총 전력은 0.135 W 수준으로 뚜렷한 감소를 보였다. 반면, 단계 간 파이프라이닝 도입에 따른 레지스터 비용으로 총 셀 면적이 23033.88 → 28967.62로 약 25.7% 증가했고, 순차 소자 면적 비율도 7.70% → 26.98%로 확대되었다. 요약하면, 본 설계는 adder-tree 파이프라이닝 + ternary MAC(+α) 적용을 통해 연산 경로를 단축하고 타이밍·전력 측면의 효율을 크게 향상시키는 대신, 정확도 소폭 저하와 면적 증가를 수용하는 명확한 트레이드오프를 보인다. 향후에는 (1) 레지스터 재배치 및 단계 균형화, (2) 마지막 합산부 컴프레서 트리 적용, (3) 합성 지시어 고정(retiming/ungroup/keep)을 통한 경로 안정화로 잔여 음수 슬랙 해소와 면적 최적화를 달성할 수 있었다.
 
 ### 2. 기대효과
